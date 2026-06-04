@@ -1,0 +1,46 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+.pytest_cache/
+querymind.db
+admin_config.db
+dist/
+build/
+
+uv.lock
+
+# Exclude PlanStep and other markdown files (except README.md)
+PlanStep.md
+PlanStep_v2.md
+*.md
+!README.md
+
+# Databases, Local Backups, and Logs
+*.db
+*.sqlite
+*.sqlite3
+*.log
+
+# Test coverage and static analysis caches
+.coverage
+htmlcov/
+.cache/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE-specific configurations
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+*~
