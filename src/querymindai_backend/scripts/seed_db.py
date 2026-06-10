@@ -1,8 +1,16 @@
 import os
+import sys
 import random
 import sqlite3
 from datetime import datetime, timedelta
 from faker import Faker
+from pathlib import Path
+
+# Add the 'src' directory to sys.path to allow running this script directly
+src_dir = str(Path(__file__).resolve().parent.parent.parent)
+if src_dir not in sys.path:
+    sys.path.insert(0, src_dir)
+
 from querymindai_backend.config import get_settings
 from querymindai_backend.database import get_db_connection
 
