@@ -5,6 +5,13 @@ from querymindai_backend.logging_config import setup_logging
 from querymindai_backend.models import RootResponse, HealthResponse, QueryRequest, QueryResponse
 from querymindai_backend.pipeline.orchestrator import run_query_pipeline
 
+# Import Admin Routers
+from querymindai_backend.admin.schema_routes import router as schema_router
+from querymindai_backend.admin.examples_routes import router as examples_router
+from querymindai_backend.admin.logs_routes import router as logs_router
+from querymindai_backend.admin.guardrails_routes import router as guardrails_router
+from querymindai_backend.admin.config_routes import router as config_router
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Call setup_logging at startup
@@ -18,6 +25,13 @@ app = FastAPI(
     version=settings.app_version,
     lifespan=lifespan,
 )
+
+# Register Admin Routers
+app.include_router(schema_router)
+app.include_router(examples_router)
+app.include_router(logs_router)
+app.include_router(guardrails_router)
+app.include_router(config_router)
 
 @app.get("/", response_model=RootResponse)
 async def read_root() -> RootResponse:
