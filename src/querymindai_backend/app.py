@@ -1,9 +1,12 @@
+import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, HTTPException
+from fastapi.responses import JSONResponse
 from querymindai_backend.config import get_settings
 from querymindai_backend.logging_config import setup_logging
 from querymindai_backend.models import RootResponse, HealthResponse, QueryRequest, QueryResponse
 from querymindai_backend.pipeline.orchestrator import run_query_pipeline
+from querymindai_backend.middleware import RequestIDMiddleware
 
 # Import Admin Routers
 from querymindai_backend.admin.schema_routes import router as schema_router
@@ -11,6 +14,8 @@ from querymindai_backend.admin.examples_routes import router as examples_router
 from querymindai_backend.admin.logs_routes import router as logs_router
 from querymindai_backend.admin.guardrails_routes import router as guardrails_router
 from querymindai_backend.admin.config_routes import router as config_router
+
+logger = logging.getLogger("querymindai_backend.app")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -26,12 +31,42 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Register Request ID Middleware
+app.add_middleware(RequestIDMiddleware)
+
 # Register Admin Routers
 app.include_router(schema_router)
 app.include_router(examples_router)
 app.include_router(logs_router)
 app.include_router(guardrails_router)
 app.include_router(config_router)
+
+# Global Exception Handler
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """
+    Catches all unhandled exceptions, logs them with stacktrace locally,
+    and returns a sanitized error message to the client.
+    """
+    logger.error(f"Global unhandled exception: {exc}", exc_info=True)
+    
+    request_id = None
+    if hasattr(request.state, "request_id"):
+        request_id = request.state.request_id
+    elif "x-request-id" in request.headers:
+        request_id = request.headers["x-request-id"]
+        
+    content = {
+        "status": "error",
+        "message": "An internal server error occurred."
+    }
+    if request_id:
+        content["request_id"] = request_id
+        
+    return JSONResponse(
+        status_code=500,
+        content=content
+    )
 
 @app.get("/", response_model=RootResponse)
 async def read_root() -> RootResponse:
@@ -49,6 +84,29 @@ async def health_check() -> HealthResponse:
         version=settings.app_version,
         environment=settings.app_env,
     )
+
+@app.get("/live")
+async def liveness_check():
+    """
+    Liveness probe to verify that the application container is running.
+    """
+    return {"status": "live", "message": "App is running"}
+
+@app.get("/ready")
+async def readiness_check():
+    """
+    Readiness probe to check if all configurations and components load successfully.
+    """
+    try:
+        settings_test = get_settings()
+        # Verify basic config parameters access
+        _ = settings_test.db_path
+        return {"status": "ready", "message": "App is ready to process queries"}
+    except Exception as e:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Configuration failed to load: {str(e)}"
+        )
 
 @app.post("/query", response_model=QueryResponse)
 async def query_endpoint(req: QueryRequest) -> QueryResponse:
