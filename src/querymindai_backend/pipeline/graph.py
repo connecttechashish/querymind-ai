@@ -9,6 +9,7 @@ from querymindai_backend.pipeline.generator import build_sql_prompt, generate_sq
 from querymindai_backend.pipeline.validator import validate_sql, SQLValidationResult
 from querymindai_backend.pipeline.executor import execute_sql, SQLExecutionResult
 from querymindai_backend.pipeline.formatter import format_result, FormatResult
+from querymindai_backend.utils.tracing import trace_step
 
 class QueryPipelineState(TypedDict, total=False):
     """
@@ -33,6 +34,9 @@ def node_classify(state: QueryPipelineState) -> Dict[str, Any]:
     """Classifies the query type (e.g. simple, join, unsupported)."""
     if state.get("status") in ("failed", "unsupported", "clarification"):
         return {}
+        
+    trace_step("classify", {"question": state["question"]})
+    
     try:
         class_res = classify_query(state["question"])
         if class_res.query_type == QueryType.UNSUPPORTED:
@@ -52,6 +56,9 @@ def node_link_schema(state: QueryPipelineState) -> Dict[str, Any]:
     """Links synonyms in the question to database tables/columns."""
     if state.get("status") in ("failed", "unsupported", "clarification"):
         return {}
+        
+    trace_step("link_schema", {"question": state["question"]})
+    
     try:
         link_res = link_schema(state["question"])
         if link_res.needs_clarification:
@@ -72,6 +79,9 @@ def node_retrieve_examples(state: QueryPipelineState) -> Dict[str, Any]:
     """Retrieves related few-shot query-to-SQL training examples."""
     if state.get("status") in ("failed", "unsupported", "clarification"):
         return {}
+        
+    trace_step("retrieve_examples", {"question": state["question"]})
+    
     try:
         examples = retrieve_examples(state["question"])
         return {"examples": examples}
@@ -82,6 +92,12 @@ def node_generate_sql(state: QueryPipelineState) -> Dict[str, Any]:
     """Generates the prompt and calls the text-to-SQL generation model."""
     if state.get("status") in ("failed", "unsupported", "clarification"):
         return {}
+        
+    trace_step("generate_sql", {
+        "question": state["question"],
+        "resolved_tables": state["linked_schema"].resolved_tables if state.get("linked_schema") else []
+    })
+    
     try:
         # Load business database schema context
         try:
@@ -145,6 +161,11 @@ def node_validate_sql(state: QueryPipelineState) -> Dict[str, Any]:
     """Validates the generated SQL structure and table names."""
     if state.get("status") in ("failed", "unsupported", "clarification"):
         return {}
+        
+    trace_step("validate_sql", {
+        "sql": state["generation"].sql if state.get("generation") else ""
+    })
+    
     try:
         sql = state["generation"].sql if state.get("generation") else ""
         val_res = validate_sql(sql)
@@ -165,8 +186,11 @@ def node_execute_sql(state: QueryPipelineState) -> Dict[str, Any]:
     """Executes the safe sanitized SQL query on read-only database."""
     if state.get("status") in ("failed", "unsupported", "clarification"):
         return {}
+        
+    sql = state["validation"].sanitized_sql if (state.get("validation") and state["validation"].sanitized_sql) else (state["generation"].sql if state.get("generation") else "")
+    trace_step("execute_sql", {"sql": sql})
+    
     try:
-        sql = state["validation"].sanitized_sql if (state.get("validation") and state["validation"].sanitized_sql) else (state["generation"].sql if state.get("generation") else "")
         exec_res = execute_sql(sql)
         if exec_res.error:
             return {
@@ -185,6 +209,12 @@ def node_format_result(state: QueryPipelineState) -> Dict[str, Any]:
     """Formats the data rows and column names into readable response representation."""
     if state.get("status") in ("failed", "unsupported", "clarification"):
         return {}
+        
+    trace_step("format_result", {
+        "columns": state["execution"].columns if state.get("execution") else [],
+        "row_count": state["execution"].row_count if state.get("execution") else 0
+    })
+    
     try:
         columns = state["execution"].columns if state.get("execution") else []
         rows = state["execution"].rows if state.get("execution") else []
